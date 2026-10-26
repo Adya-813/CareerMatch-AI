@@ -1,5 +1,7 @@
 import React from 'react';
-import { SquareCheck, StopCircle, Download, Plus, Zap } from 'lucide-react';
+import { SquareCheck, StopCircle, Download, Plus } from 'lucide-react';
+import { CareerMatchReport } from '../types';
+import { ReportSwitcher } from './ReportSwitcher';
 
 interface HeaderProps {
   completedStepsCount: number;
@@ -8,6 +10,10 @@ interface HeaderProps {
   onStop: () => void;
   onExport: () => void;
   onNewAnalysis: () => void;
+  currentReport: CareerMatchReport;
+  savedReports: CareerMatchReport[];
+  onSelectReport: (report: CareerMatchReport) => void;
+  onDeleteReport: (reportId: string) => void;
 }
 
 export const Header: React.FC<HeaderProps> = ({
@@ -17,21 +23,37 @@ export const Header: React.FC<HeaderProps> = ({
   onStop,
   onExport,
   onNewAnalysis,
+  currentReport,
+  savedReports,
+  onSelectReport,
+  onDeleteReport,
 }) => {
   return (
-    <header className="h-16 bg-[#0a1514] border-b border-[#142925] px-6 flex items-center justify-between sticky top-0 z-30 select-none">
-      {/* Brand */}
-      <div className="flex items-center gap-3">
-        <div className="w-8 h-8 rounded-lg bg-[#2dd4bf] flex items-center justify-center text-[#062420] shadow-sm shadow-teal-500/20">
-          <SquareCheck className="w-5 h-5 stroke-[2.5]" />
+    <header className="h-16 bg-[#0a1514] border-b border-[#142925] px-4 sm:px-6 flex items-center justify-between sticky top-0 z-30 select-none">
+      {/* Brand & Job Switcher */}
+      <div className="flex items-center gap-4">
+        <div className="flex items-center gap-2.5">
+          <div className="w-8 h-8 rounded-lg bg-[#2dd4bf] flex items-center justify-center text-[#062420] shadow-sm shadow-teal-500/20">
+            <SquareCheck className="w-5 h-5 stroke-[2.5]" />
+          </div>
+          <div className="flex items-baseline gap-2">
+            <h1 className="text-sm sm:text-base font-bold tracking-tight text-white flex items-center gap-1.5">
+              CareerMatch AI 2
+            </h1>
+            <span className="text-xs text-teal-300/80 font-normal hidden lg:inline">
+              Job-fit and interview prep
+            </span>
+          </div>
         </div>
-        <div className="flex items-baseline gap-2.5">
-          <h1 className="text-base font-bold tracking-tight text-white flex items-center gap-1.5">
-            CareerMatch AI 2
-          </h1>
-          <span className="text-xs text-teal-300/80 font-normal hidden sm:inline">
-            Job-fit and interview prep
-          </span>
+
+        {/* Saved Reports Switcher */}
+        <div className="hidden sm:block border-l border-[#183a33] pl-3">
+          <ReportSwitcher
+            currentReport={currentReport}
+            savedReports={savedReports}
+            onSelectReport={onSelectReport}
+            onDeleteReport={onDeleteReport}
+          />
         </div>
       </div>
 

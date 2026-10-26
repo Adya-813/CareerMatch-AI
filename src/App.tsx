@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { Header } from './components/Header';
 import { Sidebar } from './components/Sidebar';
 import { OverviewView } from './components/OverviewView';
@@ -16,11 +16,29 @@ import { PreparationPlanView } from './components/PreparationPlanView';
 import { InterviewReadinessView } from './components/InterviewReadinessView';
 import { ExportReportModal } from './components/ExportReportModal';
 import { NewAnalysisModal } from './components/NewAnalysisModal';
+import { ReportSwitcher } from './components/ReportSwitcher';
 import { WAYFAIR_INITIAL_REPORT } from './data/sampleProfiles';
 import { CareerMatchReport, StepStatus } from './types';
+import {
+  loadSavedReports,
+  saveReportToStorage,
+  deleteReportFromStorage,
+  getActiveReportId,
+  setActiveReportId,
+} from './utils/storage';
 
 export default function App() {
-  const [report, setReport] = useState<CareerMatchReport>(WAYFAIR_INITIAL_REPORT);
+  const [savedReports, setSavedReports] = useState<CareerMatchReport[]>(() => loadSavedReports());
+  const [report, setReport] = useState<CareerMatchReport>(() => {
+    const loaded = loadSavedReports();
+    const activeId = getActiveReportId();
+    if (activeId) {
+      const found = loaded.find((r) => r.id === activeId);
+      if (found) return found;
+    }
+    return loaded[0] || WAYFAIR_INITIAL_REPORT;
+  });
+
   const [activeTab, setActiveTab] = useState<string>('overview');
   const [isProcessing, setIsProcessing] = useState<boolean>(false);
   const [isExportOpen, setIsExportOpen] = useState<boolean>(false);
@@ -49,16 +67,36 @@ export default function App() {
   const completedStepsCount = report.steps.filter((s) => s.status === 'Done').length;
   const totalStepsCount = report.steps.length;
 
+  const handleSelectReport = (selected: CareerMatchReport) => {
+    setReport(selected);
+    setActiveReportId(selected.id);
+    setActiveTab('overview');
+  };
+
+  const handleDeleteReport = (reportId: string) => {
+    const { updatedList, nextActiveId } = deleteReportFromStorage(reportId);
+    setSavedReports(updatedList);
+    if (report.id === reportId && nextActiveId) {
+      const nextReport = updatedList.find((r) => r.id === nextActiveId);
+      if (nextReport) setReport(nextReport);
+    }
+  };
+
   const handleStop = () => {
     if (abortControllerRef.current) {
       abortControllerRef.current.abort();
       abortControllerRef.current = null;
     }
     setIsProcessing(false);
-    setReport((prev) => ({
-      ...prev,
-      steps: prev.steps.map((s) => (s.status === 'Working' ? { ...s, status: 'Done' } : s)),
-    }));
+    setReport((prev) => {
+      const updated = {
+        ...prev,
+        steps: prev.steps.map((s) => (s.status === 'Working' ? { ...s, status: 'Done' as StepStatus } : s)),
+      };
+      saveReportToStorage(updated);
+      setSavedReports(loadSavedReports());
+      return updated;
+    });
   };
 
   const handlePracticeQuestion = (questionText: string) => {
@@ -74,6 +112,8 @@ export default function App() {
     setIsProcessing(true);
     setActiveTab('overview');
 
+    const newReportId = `rep-${Date.now()}`;
+
     // Reset steps to initial state
     const initialSteps = [
       { id: 'step-1', name: 'Reading the JD and CV', status: 'Working' as StepStatus },
@@ -87,18 +127,22 @@ export default function App() {
       { id: 'step-9', name: 'Preparation plan and readiness', status: 'Waiting' as StepStatus },
     ];
 
-    setReport((prev) => ({
-      ...prev,
+    const interimReport: CareerMatchReport = {
+      ...report,
+      id: newReportId,
+      createdAt: new Date().toISOString(),
       steps: initialSteps,
       overview: {
-        ...prev.overview,
+        ...report.overview,
         jobFitScore: 0,
         atsScore: 0,
         interviewReadinessScore: 0,
         topStrengths: [],
         gapsToAddress: [],
       },
-    }));
+    };
+
+    setReport(interimReport);
 
     try {
       // Step 1: Stage 1 Fast Parse
@@ -127,7 +171,7 @@ export default function App() {
         ),
       }));
 
-      // Step 2: Stage 2 Deep JD/CV & Fit in parallel with Stage 3
+      // Step 2 & 3 in parallel
       const stage2Promise = fetch('/api/analyze/stage2', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -144,28 +188,34 @@ export default function App() {
 
       const [stage2Data, stage3Data] = await Promise.all([stage2Promise, stage3Promise]);
 
-      setReport((prev) => ({
-        ...prev,
-        jdAnalysis: stage2Data.jdAnalysis || prev.jdAnalysis,
-        cvAnalysis: stage2Data.cvAnalysis || prev.cvAnalysis,
-        fitScore: stage2Data.fitScore || prev.fitScore,
-        strengthsGaps: stage2Data.strengthsGaps || prev.strengthsGaps,
-        cvOptimizer: stage2Data.cvOptimizer || prev.cvOptimizer,
-        interviewQuestions: stage3Data.interviewQuestions || prev.interviewQuestions,
-        caseInterviewPrep: stage3Data.caseInterviewPrep || prev.caseInterviewPrep,
-        companyResearch: stage3Data.companyResearch || prev.companyResearch,
-        industryResearch: stage3Data.industryResearch || prev.industryResearch,
-        storyBank: stage3Data.storyBank || prev.storyBank,
-        prepPlan: stage3Data.prepPlan || prev.prepPlan,
-        readiness: stage3Data.readiness || prev.readiness,
-        steps: prev.steps.map((s) => ({ ...s, status: 'Done' })),
-      }));
+      setReport((prev) => {
+        const finalized: CareerMatchReport = {
+          ...prev,
+          jdAnalysis: stage2Data.jdAnalysis || prev.jdAnalysis,
+          cvAnalysis: stage2Data.cvAnalysis || prev.cvAnalysis,
+          fitScore: stage2Data.fitScore || prev.fitScore,
+          strengthsGaps: stage2Data.strengthsGaps || prev.strengthsGaps,
+          cvOptimizer: stage2Data.cvOptimizer || prev.cvOptimizer,
+          interviewQuestions: stage3Data.interviewQuestions || prev.interviewQuestions,
+          caseInterviewPrep: stage3Data.caseInterviewPrep || prev.caseInterviewPrep,
+          companyResearch: stage3Data.companyResearch || prev.companyResearch,
+          industryResearch: stage3Data.industryResearch || prev.industryResearch,
+          storyBank: stage3Data.storyBank || prev.storyBank,
+          prepPlan: stage3Data.prepPlan || prev.prepPlan,
+          readiness: stage3Data.readiness || prev.readiness,
+          steps: prev.steps.map((s) => ({ ...s, status: 'Done' as StepStatus })),
+        };
+
+        // Persist to localStorage (automatically caps to recent 3)
+        const updatedList = saveReportToStorage(finalized);
+        setSavedReports(updatedList);
+        return finalized;
+      });
     } catch (err: unknown) {
       if (err instanceof Error && err.name === 'AbortError') {
         console.log('Analysis aborted by user');
       } else {
         console.error('Analysis error:', err);
-        // Fallback to complete state for stability
         setReport(WAYFAIR_INITIAL_REPORT);
       }
     } finally {
@@ -184,7 +234,22 @@ export default function App() {
         onStop={handleStop}
         onExport={() => setIsExportOpen(true)}
         onNewAnalysis={() => setIsNewAnalysisOpen(true)}
+        currentReport={report}
+        savedReports={savedReports}
+        onSelectReport={handleSelectReport}
+        onDeleteReport={handleDeleteReport}
       />
+
+      {/* Mobile Switcher Bar */}
+      <div className="sm:hidden px-4 py-2 bg-[#091514] border-b border-[#142925] flex items-center justify-between">
+        <span className="text-[11px] font-mono text-gray-400">Application:</span>
+        <ReportSwitcher
+          currentReport={report}
+          savedReports={savedReports}
+          onSelectReport={handleSelectReport}
+          onDeleteReport={handleDeleteReport}
+        />
+      </div>
 
       {/* Main Workspace with Fixed Sidebar and Scrolling Content */}
       <div className="flex-1 flex max-w-7xl w-full mx-auto">
@@ -194,7 +259,7 @@ export default function App() {
           tabStatuses={tabStatuses}
         />
 
-        <main className="flex-1 p-6 md:p-8 max-w-5xl overflow-y-auto">
+        <main className="flex-1 p-4 sm:p-6 md:p-8 max-w-5xl overflow-y-auto">
           {activeTab === 'overview' && (
             <OverviewView
               overview={report.overview}
