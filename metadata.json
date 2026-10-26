@@ -1,0 +1,6 @@
+{
+  "name": "CareerMatch AI 2",
+  "description": "AI-powered job-fit analysis, CV optimization, company intelligence, and interview preparation report generator.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
